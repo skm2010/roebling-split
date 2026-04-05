@@ -1,4 +1,4 @@
-import { ITEMS, PEOPLE, RECEIPT, Item } from "./bill";
+import { ITEMS, RECEIPT, Person } from "./bill";
 import { ClaimsState } from "./store";
 
 export type PersonTotal = {
@@ -19,9 +19,9 @@ export type Totals = {
   billTotal: number;
 };
 
-export function computeTotals(claims: ClaimsState): Totals {
+export function computeTotals(claims: ClaimsState, people: Person[]): Totals {
   const perPerson: Record<string, PersonTotal> = {};
-  for (const p of PEOPLE) {
+  for (const p of people) {
     perPerson[p.id] = {
       id: p.id,
       name: p.name,
@@ -49,7 +49,7 @@ export function computeTotals(claims: ClaimsState): Totals {
   }
 
   // Proportional tax/tip/cc based on each person's share of the full subtotal
-  for (const p of PEOPLE) {
+  for (const p of people) {
     const pp = perPerson[p.id];
     const ratio = RECEIPT.subtotal > 0 ? pp.itemsSubtotal / RECEIPT.subtotal : 0;
     pp.tax = ratio * RECEIPT.tax;

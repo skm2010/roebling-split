@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readClaims, writeClaims, ClaimsState } from "@/lib/store";
-import { ITEMS, PEOPLE } from "@/lib/bill";
+import { readClaims, writeClaims, readPeople, ClaimsState } from "@/lib/store";
+import { ITEMS } from "@/lib/bill";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const claims = await readClaims();
-  return NextResponse.json({ claims });
+  const [claims, people] = await Promise.all([readClaims(), readPeople()]);
+  return NextResponse.json({ claims, people });
 }
 
 // Body: { itemId, personId, action: 'claim' | 'unclaim' }
@@ -23,7 +23,8 @@ export async function POST(req: NextRequest) {
     if (!ITEMS.find((i) => i.id === itemId)) {
       return NextResponse.json({ error: "invalid item" }, { status: 400 });
     }
-    if (!PEOPLE.find((p) => p.id === personId)) {
+    const people = await readPeople();
+    if (!people.find((p) => p.id === personId)) {
       return NextResponse.json({ error: "invalid person" }, { status: 400 });
     }
     if (action !== "claim" && action !== "unclaim") {

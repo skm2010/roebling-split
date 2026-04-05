@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ITEMS, PEOPLE, RECEIPT, PAYER, Item } from "@/lib/bill";
+import { ITEMS, RECEIPT, PAYER, Item, Person } from "@/lib/bill";
 import { computeTotals, formatUSD } from "@/lib/math";
 import { ClaimsState } from "@/lib/store";
 
@@ -27,17 +27,25 @@ const CATEGORY_LABEL: Record<Item["category"], string> = {
 
 export default function HomePage() {
   const [claims, setClaims] = useState<ClaimsState>({});
+  const [people, setPeople] = useState<Person[]>([]);
   const [activePersonId, setActivePersonId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<Set<string>>(new Set());
 
-  // Restore active person from localStorage
+  // Restore active person from localStorage (validated after people load)
+  const [storedPersonId] = useState(() => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem(ACTIVE_PERSON_KEY);
+  });
+
+  // Once people are loaded, validate and restore active person
   useEffect(() => {
-    const stored = localStorage.getItem(ACTIVE_PERSON_KEY);
-    if (stored && PEOPLE.find((p) => p.id === stored)) {
-      setActivePersonId(stored);
+    if (people.length > 0 && storedPersonId && !activePersonId) {
+      if (people.find((p) => p.id === storedPersonId)) {
+        setActivePersonId(storedPersonId);
+      }
     }
-  }, []);
+  }, [people, storedPersonId, activePersonId]);
 
   // Initial fetch
   useEffect(() => {
@@ -45,6 +53,7 @@ export default function HomePage() {
       .then((r) => r.json())
       .then((d) => {
         setClaims(d.claims || {});
+        if (d.people) setPeople(d.people);
         setLoaded(true);
       })
       .catch(() => setLoaded(true));
@@ -55,7 +64,10 @@ export default function HomePage() {
     const interval = setInterval(() => {
       fetch("/api/claims")
         .then((r) => r.json())
-        .then((d) => setClaims(d.claims || {}))
+        .then((d) => {
+          setClaims(d.claims || {});
+          if (d.people) setPeople(d.people);
+        })
         .catch(() => {});
     }, 4000);
     return () => clearInterval(interval);
@@ -112,7 +124,24 @@ export default function HomePage() {
     localStorage.removeItem(ACTIVE_PERSON_KEY);
   };
 
-  const totals = useMemo(() => computeTotals(claims), [claims]);
+  const handleAddPerson = async (name: string) => {
+    const res = await fetch("/api/people", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (data.people) setPeople(data.people);
+    // Auto-select the newly added person
+    if (data.people && !data.error) {
+      const newPerson = data.people.find(
+        (p: Person) => p.name.toLowerCase() === name.trim().toLowerCase()
+      );
+      if (newPerson) selectPerson(newPerson.id);
+    }
+  };
+
+  const totals = useMemo(() => computeTotals(claims, people), [claims, people]);
   const myTotal = useMemo(
     () => totals.people.find((p) => p.id === activePersonId),
     [totals, activePersonId]
@@ -156,10 +185,29 @@ export default function HomePage() {
   };
 
   if (!activePersonId) {
-    return <NamePicker onSelect={selectPerson} />;
+    return (
+      <NamePicker
+        people={people}
+        claims={claims}
+        loaded={loaded}
+        onSelect={selectPerson}
+        onAddPerson={handleAddPerson}
+      />
+    );
   }
 
-  const activePerson = PEOPLE.find((p) => p.id === activePersonId)!;
+  const activePerson = people.find((p) => p.id === activePersonId);
+  if (!activePerson) {
+    return (
+      <NamePicker
+        people={people}
+        claims={claims}
+        loaded={loaded}
+        onSelect={selectPerson}
+        onAddPerson={handleAddPerson}
+      />
+    );
+  }
 
   // Venmo deep link
   const venmoAmount = myTotal ? myTotal.total.toFixed(2) : "0.00";
@@ -268,6 +316,7 @@ export default function HomePage() {
                           group.items.length > 1 ? `#${ii + 1}` : item.name
                         }
                         showFullName={group.items.length === 1}
+                        people={people}
                       />
                     ))}
                   </div>
@@ -368,7 +417,41 @@ export default function HomePage() {
 
 // ================= Name Picker =================
 
-function NamePicker({ onSelect }: { onSelect: (id: string) => void }) {
+function NamePicker({
+  people,
+  claims,
+  loaded,
+  onSelect,
+  onAddPerson,
+}: {
+  people: Person[];
+  claims: ClaimsState;
+  loaded: boolean;
+  onSelect: (id: string) => void;
+  onAddPerson: (name: string) => Promise<void>;
+}) {
+  const [showInput, setShowInput] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const totals = useMemo(() => computeTotals(claims, people), [claims, people]);
+  const percentClaimed =
+    RECEIPT.subtotal > 0
+      ? Math.min(100, (totals.claimedSubtotal / RECEIPT.subtotal) * 100)
+      : 0;
+
+  const handleAdd = async () => {
+    if (!newName.trim() || adding) return;
+    setAdding(true);
+    try {
+      await onAddPerson(newName.trim());
+    } finally {
+      setAdding(false);
+      setNewName("");
+      setShowInput(false);
+    }
+  };
+
   return (
     <main className="min-h-screen flex items-center justify-center px-5">
       <motion.div
@@ -393,6 +476,59 @@ function NamePicker({ onSelect }: { onSelect: (id: string) => void }) {
           </div>
         </div>
 
+        {/* Unclaimed tab summary */}
+        {loaded && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3, duration: 0.4 }}
+            className="mb-8 rounded-xl border border-paper/10 bg-ink-800/40 backdrop-blur px-5 py-4"
+          >
+            <div className="flex items-end justify-between mb-2.5">
+              <div className="font-mono text-[10px] uppercase tracking-widest text-paper/50">
+                Tab status
+              </div>
+              <div className="font-mono text-[11px] text-paper/60">
+                {Math.round(percentClaimed)}% claimed
+              </div>
+            </div>
+            <div className="relative h-[3px] bg-paper/10 rounded-full overflow-hidden mb-4">
+              <motion.div
+                className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-deep via-amber-glow to-amber-glow rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${percentClaimed}%` }}
+                transition={{ type: "spring", stiffness: 120, damping: 20 }}
+              />
+            </div>
+            <div className="flex justify-between">
+              <div>
+                <div className="font-mono text-[9px] uppercase tracking-widest text-paper/40">
+                  Claimed
+                </div>
+                <div className="font-mono text-sm text-paper/70 mt-0.5">
+                  {formatUSD(totals.claimedSubtotal)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-mono text-[9px] uppercase tracking-widest text-amber-glow/70">
+                  Unclaimed
+                </div>
+                <div className="font-mono text-sm text-amber-glow mt-0.5">
+                  {formatUSD(totals.unclaimedSubtotal)}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="font-mono text-[9px] uppercase tracking-widest text-paper/40">
+                  Total
+                </div>
+                <div className="font-mono text-sm text-paper/70 mt-0.5">
+                  {formatUSD(RECEIPT.total)}
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         <div className="mb-5 text-center">
           <div className="font-display text-lg italic text-paper/70">
             who are you?
@@ -400,7 +536,7 @@ function NamePicker({ onSelect }: { onSelect: (id: string) => void }) {
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          {PEOPLE.map((p, i) => (
+          {people.map((p, i) => (
             <motion.button
               key={p.id}
               initial={{ opacity: 0, y: 12 }}
@@ -417,6 +553,64 @@ function NamePicker({ onSelect }: { onSelect: (id: string) => void }) {
               </div>
             </motion.button>
           ))}
+
+          {/* Add person tile */}
+          {!showInput ? (
+            <motion.button
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 + people.length * 0.05, duration: 0.4 }}
+              onClick={() => setShowInput(true)}
+              className="group relative rounded-xl border border-dashed border-paper/20 bg-ink-800/30 backdrop-blur px-4 py-5 text-left transition hover:border-amber-glow/50 hover:bg-ink-700/40"
+            >
+              <div className="font-mono text-[9px] uppercase tracking-widest text-paper/30 group-hover:text-amber-glow/70 transition">
+                +
+              </div>
+              <div className="font-display text-xl text-paper/50 mt-0.5 group-hover:text-paper/80 transition">
+                Add yourself
+              </div>
+            </motion.button>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="rounded-xl border border-amber-glow/40 bg-ink-800/60 backdrop-blur px-4 py-4"
+            >
+              <input
+                autoFocus
+                type="text"
+                placeholder="Your name"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleAdd();
+                  if (e.key === "Escape") {
+                    setShowInput(false);
+                    setNewName("");
+                  }
+                }}
+                className="w-full bg-transparent border-b border-paper/20 pb-2 font-display text-xl text-paper placeholder:text-paper/30 outline-none focus:border-amber-glow/60"
+              />
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={handleAdd}
+                  disabled={!newName.trim() || adding}
+                  className="flex-1 rounded-lg bg-amber-glow/90 text-ink font-mono text-[11px] uppercase tracking-wider py-2 transition hover:bg-amber-glow disabled:opacity-40"
+                >
+                  {adding ? "..." : "Join"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowInput(false);
+                    setNewName("");
+                  }}
+                  className="rounded-lg border border-paper/15 text-paper/50 font-mono text-[11px] uppercase tracking-wider px-3 py-2 transition hover:border-paper/30"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          )}
         </div>
 
         <div className="text-center mt-8 font-mono text-[10px] text-paper/30 uppercase tracking-widest">
@@ -437,6 +631,7 @@ function ItemRow({
   onToggle,
   compactLabel,
   showFullName,
+  people,
 }: {
   item: Item;
   claimants: string[];
@@ -445,6 +640,7 @@ function ItemRow({
   onToggle: () => void;
   compactLabel: string;
   showFullName: boolean;
+  people: Person[];
 }) {
   const isMine = claimants.includes(activePersonId);
   const isShared = claimants.length > 1;
@@ -452,7 +648,7 @@ function ItemRow({
   const myShare = claimants.length > 0 ? item.price / claimants.length : 0;
 
   const claimantNames = claimants
-    .map((id) => PEOPLE.find((p) => p.id === id)?.name)
+    .map((id) => people.find((p) => p.id === id)?.name)
     .filter(Boolean) as string[];
 
   return (

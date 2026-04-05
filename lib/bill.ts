@@ -10,7 +10,7 @@ export type Person = {
   name: string;
 };
 
-export const PEOPLE: Person[] = [
+export const DEFAULT_PEOPLE: Person[] = [
   { id: "sanjit", name: "Sanjit" },
   { id: "vimal", name: "Vimal" },
   { id: "yash", name: "Yash" },
