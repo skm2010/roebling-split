@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600;9..144,700;9..144,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap");
+
+:root {
+  --ink: #0b0f1a;
+  --ink-800: #131827;
+  --ink-700: #1c2236;
+  --paper: #f5efe0;
+  --paper-warm: #efe7d2;
+  --amber-glow: #f4a64a;
+  --amber-deep: #d97706;
+  --claret: #8b2e2e;
+}
+
+html,
+body {
+  background: var(--ink);
+  color: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+}
+
+/* Paper grain on body */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background-image:
+    radial-gradient(ellipse at top, rgba(244, 166, 74, 0.08), transparent 55%),
+    radial-gradient(ellipse at bottom right, rgba(139, 46, 46, 0.06), transparent 60%);
+}
+
+/* Subtle grain texture */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  mix-blend-mode: overlay;
+}
+
+.font-display {
+  font-family: "Fraunces", Georgia, serif;
+  font-optical-sizing: auto;
+  font-variation-settings: "opsz" 144, "SOFT" 50;
+}
+
+.font-body {
+  font-family: "Instrument Sans", system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--ink-800);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ink-700);
+  border-radius: 10px;
+  border: 2px solid var(--ink-800);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3249;
+}
+
+/* Selection */
+::selection {
+  background: var(--amber-glow);
+  color: var(--ink);
+}
+
+/* Torn-edge receipt top */
+.torn-top {
+  -webkit-mask-image: radial-gradient(circle at 4px 0, transparent 4px, black 4.5px);
+  -webkit-mask-size: 16px 12px;
+  -webkit-mask-repeat: repeat-x;
+  mask-image: radial-gradient(circle at 4px 0, transparent 4px, black 4.5px);
+  mask-size: 16px 12px;
+  mask-repeat: repeat-x;
+}
+
+/* Focus ring */
+*:focus-visible {
+  outline: 2px solid var(--amber-glow);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+button,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Content above overlays */
+main {
+  position: relative;
+  z-index: 10;
+}
+
+/* Hide number input spinners */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
