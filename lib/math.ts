@@ -48,11 +48,10 @@ export function computeTotals(claims: ClaimsState): Totals {
     claimedSubtotal += item.price;
   }
 
-  // Proportional tax/tip/cc based on each person's share of CLAIMED subtotal
+  // Proportional tax/tip/cc based on each person's share of the full subtotal
   for (const p of PEOPLE) {
     const pp = perPerson[p.id];
-    const ratio = claimedSubtotal > 0 ? pp.itemsSubtotal / claimedSubtotal : 0;
-    // Tax/tip/cc are on the full bill, distributed among claimants proportionally
+    const ratio = RECEIPT.subtotal > 0 ? pp.itemsSubtotal / RECEIPT.subtotal : 0;
     pp.tax = ratio * RECEIPT.tax;
     pp.tip = ratio * RECEIPT.tip;
     pp.cc = ratio * RECEIPT.ccSurcharge;
