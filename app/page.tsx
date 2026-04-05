@@ -33,20 +33,17 @@ export default function HomePage() {
   const [pending, setPending] = useState<Set<string>>(new Set());
   const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
-  // Restore active person from localStorage (validated after people load)
-  const [storedPersonId] = useState(() => {
-    if (typeof window === "undefined") return null;
-    return localStorage.getItem(ACTIVE_PERSON_KEY);
-  });
+  // Restore active person from localStorage once people load
+  const [restoredFromStorage, setRestoredFromStorage] = useState(false);
 
-  // Once people are loaded, validate and restore active person
   useEffect(() => {
-    if (people.length > 0 && storedPersonId && !activePersonId) {
-      if (people.find((p) => p.id === storedPersonId)) {
-        setActivePersonId(storedPersonId);
-      }
+    if (restoredFromStorage || people.length === 0) return;
+    const stored = localStorage.getItem(ACTIVE_PERSON_KEY);
+    if (stored && people.find((p) => p.id === stored)) {
+      setActivePersonId(stored);
     }
-  }, [people, storedPersonId, activePersonId]);
+    setRestoredFromStorage(true);
+  }, [people, restoredFromStorage]);
 
   // Initial fetch
   useEffect(() => {
