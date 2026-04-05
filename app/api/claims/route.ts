@@ -45,3 +45,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "bad request" }, { status: 400 });
   }
 }
+
+// Bulk assign: { itemId, personIds: string[] }
+// Sets the exact list of claimants for an item
+export async function PUT(req: NextRequest) {
+  try {
+    const { itemId, personIds } = (await req.json()) as {
+      itemId: string;
+      personIds: string[];
+    };
+
+    if (!ITEMS.find((i) => i.id === itemId)) {
+      return NextResponse.json({ error: "invalid item" }, { status: 400 });
+    }
+    const people = await readPeople();
+    const validIds = personIds.filter((id) => people.find((p) => p.id === id));
+
+    const claims: ClaimsState = await readClaims();
+    if (validIds.length === 0) delete claims[itemId];
+    else claims[itemId] = validIds;
+
+    await writeClaims(claims);
+    return NextResponse.json({ claims });
+  } catch {
+    return NextResponse.json({ error: "bad request" }, { status: 400 });
+  }
+}

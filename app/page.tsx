@@ -31,6 +31,7 @@ export default function HomePage() {
   const [activePersonId, setActivePersonId] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [pending, setPending] = useState<Set<string>>(new Set());
+  const [expandedItem, setExpandedItem] = useState<string | null>(null);
 
   // Restore active person from localStorage (validated after people load)
   const [storedPersonId] = useState(() => {
@@ -112,6 +113,36 @@ export default function HomePage() {
       }
     },
     [activePersonId, claims]
+  );
+
+  const bulkAssign = useCallback(
+    async (itemId: string, personIds: string[]) => {
+      // Optimistic
+      const optimistic = { ...claims };
+      if (personIds.length === 0) delete optimistic[itemId];
+      else optimistic[itemId] = personIds;
+      setClaims(optimistic);
+
+      setPending((s) => new Set(s).add(itemId));
+      try {
+        const res = await fetch("/api/claims", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemId, personIds }),
+        });
+        const data = await res.json();
+        if (data.claims) setClaims(data.claims);
+      } catch {
+        setClaims(claims);
+      } finally {
+        setPending((s) => {
+          const next = new Set(s);
+          next.delete(itemId);
+          return next;
+        });
+      }
+    },
+    [claims]
   );
 
   const selectPerson = (id: string) => {
@@ -317,6 +348,15 @@ export default function HomePage() {
                         }
                         showFullName={group.items.length === 1}
                         people={people}
+                        expanded={expandedItem === item.id}
+                        onExpand={() =>
+                          setExpandedItem(
+                            expandedItem === item.id ? null : item.id
+                          )
+                        }
+                        onBulkAssign={(personIds) =>
+                          bulkAssign(item.id, personIds)
+                        }
                       />
                     ))}
                   </div>
@@ -632,6 +672,9 @@ function ItemRow({
   compactLabel,
   showFullName,
   people,
+  expanded,
+  onExpand,
+  onBulkAssign,
 }: {
   item: Item;
   claimants: string[];
@@ -641,6 +684,9 @@ function ItemRow({
   compactLabel: string;
   showFullName: boolean;
   people: Person[];
+  expanded: boolean;
+  onExpand: () => void;
+  onBulkAssign: (personIds: string[]) => void;
 }) {
   const isMine = claimants.includes(activePersonId);
   const isShared = claimants.length > 1;
@@ -650,6 +696,13 @@ function ItemRow({
   const claimantNames = claimants
     .map((id) => people.find((p) => p.id === id)?.name)
     .filter(Boolean) as string[];
+
+  const togglePerson = (personId: string) => {
+    const current = new Set(claimants);
+    if (current.has(personId)) current.delete(personId);
+    else current.add(personId);
+    onBulkAssign(Array.from(current));
+  };
 
   return (
     <motion.li
@@ -663,81 +716,156 @@ function ItemRow({
       transition={{ duration: 0.25 }}
       className="relative"
     >
-      <button
-        onClick={onToggle}
-        className={`w-full flex items-center gap-4 py-3 px-3 rounded-lg text-left transition ${
+      <div
+        className={`rounded-lg transition ${
           isMine
             ? "border border-amber-glow/40"
+            : expanded
+            ? "border border-paper/20"
             : "border border-transparent hover:border-paper/10"
         }`}
       >
-        {/* Checkbox */}
-        <div
-          className={`shrink-0 w-5 h-5 rounded border-[1.5px] flex items-center justify-center transition ${
-            isMine
-              ? "bg-amber-glow border-amber-glow"
-              : "border-paper/25 group-hover:border-paper/40"
-          } ${pending ? "animate-pulse" : ""}`}
-        >
-          {isMine && (
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+        <div className="flex items-center gap-4 py-3 px-3">
+          {/* Checkbox — tap to toggle yourself */}
+          <button
+            onClick={onToggle}
+            className="shrink-0"
+          >
+            <div
+              className={`w-5 h-5 rounded border-[1.5px] flex items-center justify-center transition ${
+                isMine
+                  ? "bg-amber-glow border-amber-glow"
+                  : "border-paper/25 hover:border-paper/40"
+              } ${pending ? "animate-pulse" : ""}`}
+            >
+              {isMine && (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path
+                    d="M2.5 6L5 8.5L9.5 3.5"
+                    stroke="#0B0F1A"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              )}
+            </div>
+          </button>
+
+          {/* Label — tap to expand people picker */}
+          <button
+            onClick={onExpand}
+            className="flex-1 min-w-0 text-left"
+          >
+            <div className="flex items-baseline gap-2">
+              <span
+                className={`font-body text-[15px] truncate ${
+                  isMine ? "text-paper" : "text-paper/85"
+                }`}
+              >
+                {showFullName ? item.name : compactLabel}
+              </span>
+            </div>
+            {claimantNames.length > 0 && (
+              <div className="font-mono text-[10px] text-paper/40 mt-0.5 truncate">
+                {isShared ? (
+                  <>
+                    <span className="text-amber-glow/70">shared</span> ·{" "}
+                    {claimantNames.join(", ")}
+                  </>
+                ) : (
+                  claimantNames[0]
+                )}
+              </div>
+            )}
+          </button>
+
+          {/* Price */}
+          <div className="shrink-0 text-right">
+            <div
+              className={`font-mono text-sm ${
+                isMine ? "text-amber-glow" : "text-paper/60"
+              }`}
+            >
+              {formatUSD(item.price)}
+            </div>
+            {isMine && isShared && (
+              <div className="font-mono text-[10px] text-amber-glow/60 mt-0.5">
+                you: {formatUSD(myShare)}
+              </div>
+            )}
+            {isUnclaimed && (
+              <div className="font-mono text-[9px] text-paper/25 mt-0.5 uppercase tracking-wider">
+                open
+              </div>
+            )}
+          </div>
+
+          {/* Expand arrow */}
+          <button
+            onClick={onExpand}
+            className="shrink-0 w-6 h-6 flex items-center justify-center text-paper/30 hover:text-paper/60 transition"
+          >
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 10 10"
+              fill="none"
+              className={`transition-transform ${expanded ? "rotate-180" : ""}`}
+            >
               <path
-                d="M2.5 6L5 8.5L9.5 3.5"
-                stroke="#0B0F1A"
-                strokeWidth="2"
+                d="M2 3.5L5 6.5L8 3.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
               />
             </svg>
-          )}
+          </button>
         </div>
 
-        {/* Label */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
-            <span
-              className={`font-body text-[15px] truncate ${
-                isMine ? "text-paper" : "text-paper/85"
-              }`}
+        {/* Expanded people picker */}
+        <AnimatePresence>
+          {expanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
             >
-              {showFullName ? item.name : compactLabel}
-            </span>
-          </div>
-          {claimantNames.length > 0 && (
-            <div className="font-mono text-[10px] text-paper/40 mt-0.5 truncate">
-              {isShared ? (
-                <>
-                  <span className="text-amber-glow/70">shared</span> ·{" "}
-                  {claimantNames.join(", ")}
-                </>
-              ) : (
-                claimantNames[0]
-              )}
-            </div>
+              <div className="px-3 pb-3 pt-1 border-t border-paper/10 mx-3">
+                <div className="font-mono text-[9px] uppercase tracking-widest text-paper/40 mb-2">
+                  Who had this?
+                  {claimants.length > 0 && (
+                    <span className="text-amber-glow/60 ml-2">
+                      {formatUSD(item.price / claimants.length)}/person
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {people.map((p) => {
+                    const isSelected = claimants.includes(p.id);
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => togglePerson(p.id)}
+                        className={`rounded-full px-3 py-1.5 font-mono text-[11px] transition ${
+                          isSelected
+                            ? "bg-amber-glow/90 text-ink font-medium"
+                            : "bg-paper/8 text-paper/50 hover:bg-paper/15 hover:text-paper/70"
+                        }`}
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </motion.div>
           )}
-        </div>
-
-        {/* Price */}
-        <div className="shrink-0 text-right">
-          <div
-            className={`font-mono text-sm ${
-              isMine ? "text-amber-glow" : "text-paper/60"
-            }`}
-          >
-            {formatUSD(item.price)}
-          </div>
-          {isMine && isShared && (
-            <div className="font-mono text-[10px] text-amber-glow/60 mt-0.5">
-              you: {formatUSD(myShare)}
-            </div>
-          )}
-          {isUnclaimed && (
-            <div className="font-mono text-[9px] text-paper/25 mt-0.5 uppercase tracking-wider">
-              open
-            </div>
-          )}
-        </div>
-      </button>
+        </AnimatePresence>
+      </div>
     </motion.li>
   );
 }
